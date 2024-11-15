@@ -9,6 +9,11 @@ pipeline {
         AKS_NAMESPACE = 'default'
         AZURE_CREDENTIALS_ID = 'Azure-Cred'
         TENANT_ID = '29d166ad-94ec-45cb-9f65-561c038e1c7a' // Service Principal 등록 후 생성된 ID
+        GIT_USER_NAME = 'hyerimmy'
+        GIT_USER_EMAIL = 'hyerim2000@swu.ac.kr'
+        GITHUB_CREDENTIALS_ID = 'Github-Cred'
+        GITHUB_REPO = 'github.com/hyerimmy/reqres_products.git'
+        GITHUB_BRANCH = 'master' // 업로드할 브랜치
     }
  
     stages {
@@ -34,16 +39,6 @@ pipeline {
             }
         }
         
-        stage('Azure Login') {
-            steps {
-                script {
-                    withCredentials([usernamePassword(credentialsId: env.AZURE_CREDENTIALS_ID, usernameVariable: 'AZURE_CLIENT_ID', passwordVariable: 'AZURE_CLIENT_SECRET')]) {
-                        sh 'az login --service-principal -u $AZURE_CLIENT_ID -p $AZURE_CLIENT_SECRET --tenant ${TENANT_ID}'
-                    }
-                }
-            }
-        }
-        
         stage('Push to ACR') {
             steps {
                 script {
@@ -61,19 +56,35 @@ pipeline {
             }
         }
         
-        stage('Deploy to AKS') {
+        stage('Update deploy.yaml') {
             steps {
                 script {
-                    sh "az aks get-credentials --resource-group ${RESOURCE_GROUP} --name ${AKS_CLUSTER}"
                     sh """
-                    sed 's/latest/v${env.BUILD_ID}/g' kubernetes/deploy.yaml > output.yaml
-                    cat output.yaml
-                    kubectl apply -f output.yaml
-                    kubectl apply -f kubernetes/service.yaml
-                    rm output.yaml
+                    sed 's/latest/v${env.BUILD_ID}/g' kubernetes/deploy.yaml > updated_deploy.yaml
+                    mv updated_deploy.yaml kubernetes/deploy.yaml
+                    cat kubernetes/deploy.yaml
                     """
                 }
             }
         }
+        
+        stage('Commit and Push to GitHub') {
+            steps {
+                script {
+                    withCredentials([usernamePassword(credentialsId: GITHUB_CREDENTIALS_ID, usernameVariable: 'GIT_USERNAME', passwordVariable: 'GIT_PASSWORD')]) {
+                        sh """
+                            git config --global user.email "your-email@example.com"
+                            git config --global user.name "Jenkins CI"
+                            
+                            cp kubernetes/deploy.yaml repo/kubernetes/deploy.yaml
+                            cd repo
+                            git add kubernetes/deploy.yaml
+                            git commit -m "Update deploy.yaml with build ${env.BUILD_NUMBER}"
+                            git push origin ${GITHUB_BRANCH}
+                        """
+                    }
+                }
+            }
+        } 
     }
 }
